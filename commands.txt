@@ -1,0 +1,5 @@
+#build the image
+docker build -t anomalib-conda:python3.10 .
+
+#run the image
+docker run -it --name anomalib-container anomalib-conda:python3.10
