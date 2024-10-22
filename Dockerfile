@@ -1,25 +1,21 @@
-# Use a base image for Anaconda
 FROM continuumio/miniconda3
 
-# Update and install any required system packages
-RUN apt-get update && apt-get install -y build-essential libssl-dev libffi-dev python3-dev
+# Set the working directory
+WORKDIR /app
 
-# Set working directory
-WORKDIR /workspace
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements.txt to the container
+# Copy the requirements.txt into the container
 COPY requirements.txt .
 
-# Create and activate a new conda environment for Anomalib with Python 3.10
-RUN conda create -n anomalib_env python=3.10 -y
-RUN echo "conda activate anomalib_env" >> ~/.bashrc
-SHELL ["/bin/bash", "--login", "-c"]
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install dependencies from requirements.txt in the conda environment
-RUN conda activate anomalib_env && pip install -r requirements.txt
+# Copy your application code and model files into the container
+COPY . .
 
-# Expose any required ports
-EXPOSE 8888
-
-# Default command to run when the container starts
-CMD ["bash"]
+# Set the entry point
+ENTRYPOINT ["python", "inference.py"]
