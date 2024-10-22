@@ -2,8 +2,10 @@
 docker build -t pytorch_anomaly_detection .
 
 #run the image
-docker run --rm -v /home/pi/anomalyDetectionThesis:/app pytorch_anomaly_detection
+docker run -it --device=/dev/video0 -v /home/pi/anomalyDetectionThesis:/app --name pytorch_anomaly_detection pytorch_anomaly_detection
 
+#get into the container
+docker exec -it pytorch_anomaly_detection /bin/bash
 
 
 git:
