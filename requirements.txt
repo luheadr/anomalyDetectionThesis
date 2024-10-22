@@ -1,5 +1,4 @@
-anomalib
 torch
 torchvision
-pandas
+opencv-python  # For camera image capture and processing
 numpy

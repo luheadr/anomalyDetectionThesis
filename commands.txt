@@ -1,5 +1,12 @@
-#build the image
-docker build -t anomalib-conda:python3.10 .
+#rebuild the image
+docker build -t pytorch_anomaly_detection .
 
 #run the image
-docker run -it --name anomalib-container anomalib-conda:python3.10
+docker run --rm -v /home/pi/anomalyDetectionThesis:/app pytorch_anomaly_detection
+
+
+
+git:
+git add .
+git commit -m "your message"
+git push
