@@ -1,23 +1,19 @@
-# Use the official Miniconda3 base image
-FROM continuumio/miniconda3:latest
+FROM python:3.8-slim
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements.txt first to take advantage of Docker cache
-COPY requirements.txt .
+RUN apt-get update && \
+    apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+RUN mkdir -p /app/weights /app/input /app/output
+
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install OpenCV
-RUN apt-get update && \
-    apt-get install -y python3-opencv && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+COPY inference.py .
 
-# Copy the rest of the application code to the working directory
-COPY . .
-
-# Set the default command to start a shell (bash)
-CMD ["/bin/bash"]
+ENTRYPOINT ["python", "inference.py"]

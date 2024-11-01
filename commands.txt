@@ -1,14 +1,16 @@
 #rebuild the image
-docker build -t pytorch_anomaly_detection .
+docker build -t pytorch-ad .
 
 #run the image
-docker run -it --device=/dev/video0 -v /home/pi/anomalyDetectionThesis:/app --name pytorch_anomaly_detection pytorch_anomaly_detection
+docker run -it --device=/dev/video0 -v /home/pi/anomalyDetectionThesis:/app --name pytorch-ad pytorch-ad
 
 #get into the container
-docker exec -it pytorch_anomaly_detection /bin/bash
+docker exec -it pytorch-ad /bin/bash
 
 
 git:
 git add .
 git commit -m "your message"
 git push
+
+

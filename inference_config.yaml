@@ -1,0 +1,17 @@
+model:
+  name: padim
+  backbone: resnet18
+  layers:
+    - layer1
+    - layer2
+    - layer3
+  pre_trained: true
+  normalization_method: min_max
+
+data:
+  path: /app/input/000.png
+  image_size: [256, 256]
+  normalization: imagenet
+
+output: /app/output
+show: false
