@@ -9,7 +9,9 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /app/weights /app/input /app/output
+# Create directories and set permissions
+RUN mkdir -p /app/weights /app/input /app/output && \
+    chmod -R 777 /app/weights /app/input /app/output
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
