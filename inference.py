@@ -62,9 +62,6 @@ class PadimModel(nn.Module):
         self.pixel_threshold = nn.Module()
         self.pixel_threshold.value = nn.Parameter(torch.tensor(0.5))
         
-        # Initialize projection layer
-        self.projection = None
-        
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
     
@@ -72,88 +69,65 @@ class PadimModel(nn.Module):
         self.feature_maps = []  # Clear previous feature maps
         _ = self.feature_extractor(x)  # This will trigger the hooks
         
-        # Process and combine feature maps at a lower resolution
-        reduced_size = (32, 32)  # Even smaller resolution
+        # Process and combine feature maps
         resized_maps = []
         for feat_map in self.feature_maps:
             resized = nn.functional.interpolate(
                 feat_map,
-                size=reduced_size,
+                size=(64, 64),  # Fixed size for all feature maps
                 mode='bilinear',
                 align_corners=False
             )
             resized_maps.append(resized)
         
         # Concatenate all feature maps
-        combined = torch.cat(resized_maps, dim=1)  # [B, C, 32, 32]
+        features = torch.cat(resized_maps, dim=1)  # [B, C, H, W]
+        B, C, H, W = features.shape
+        logger.info(f"Feature shape before reshape: {features.shape}")
         
-        # Get dimensions
-        batch_size = combined.size(0)
-        channels = combined.size(1)
+        # Project features to match the expected dimension
+        projection = nn.Linear(C, 100).to(x.device)
         
-        logger.info(f"Combined feature maps shape: {combined.shape}")
+        # Reshape features for processing
+        features = features.permute(0, 2, 3, 1)  # [B, H, W, C]
+        features = features.reshape(-1, C)  # [BHW, C]
+        features = projection(features)  # [BHW, 100]
         
-        # Initialize projection layer if not already created
-        if self.projection is None:
-            self.projection = nn.Linear(channels, 100).to(x.device)
-            # Initialize weights to approximate identity mapping
-            if channels >= 100:
-                self.projection.weight.data[:, :100] = torch.eye(100)
-            else:
-                self.projection.weight.data[:, :channels] = torch.eye(channels)
+        logger.info(f"Feature shape after projection: {features.shape}")
         
-        # Interpolate to get 4096 spatial dimensions
-        features = nn.functional.interpolate(
-            combined,
-            size=(64, 64),
-            mode='bilinear',
-            align_corners=False
-        )  # [B, C, 64, 64]
-        
-        # Reshape to [B, 4096, C]
-        features = features.permute(0, 2, 3, 1)  # [B, 64, 64, C]
-        features = features.reshape(batch_size, 4096, channels)  # [B, 4096, C]
-        
-        # Project features to match mean dimensions
-        features = self.projection(features)  # [B, 4096, 100]
-        
-        logger.info(f"Projected features shape: {features.shape}")
-        
-        # Compute Mahalanobis distance
+        # Get pre-computed statistics from the model
         mean = self.gaussian.mean  # [100, 4096]
-        inv_covariance = self.gaussian.inv_covariance  # [4096, 100, 100]
+        inv_cov = self.gaussian.inv_covariance  # [4096, 100, 100]
         
-        # Initialize output tensor
-        mahalanobis_dist = torch.zeros(batch_size, 4096, device=x.device)
-        
-        # Process in chunks to save memory
-        chunk_size = 512
-        for i in range(0, 4096, chunk_size):
-            end_idx = min(i + chunk_size, 4096)
+        # Compute distances for each location
+        distances = []
+        for i in range(4096):
+            loc_mean = mean[:, i]  # [100]
+            loc_cov = inv_cov[i]  # [100, 100]
             
-            # Get features and parameters for current chunk
-            feat_chunk = features[:, i:end_idx, :]  # [B, chunk_size, 100]
-            mean_chunk = mean[:, i:end_idx]  # [100, chunk_size]
-            cov_chunk = inv_covariance[i:end_idx]  # [chunk_size, 100, 100]
+            # Compute difference from mean
+            diff = features - loc_mean.unsqueeze(0)  # [BHW, 100]
             
-            # Compute difference from mean for all locations in chunk
-            diff = feat_chunk - mean_chunk.t().unsqueeze(0)  # [B, chunk_size, 100]
-            
-            # Compute Mahalanobis distance for chunk
-            for j in range(end_idx - i):
-                dist = torch.matmul(diff[:, j:j+1, :], cov_chunk[j])  # [B, 1, 100]
-                dist = torch.matmul(dist, diff[:, j:j+1, :].transpose(1, 2))  # [B, 1, 1]
-                mahalanobis_dist[:, i+j] = dist.squeeze()
+            # Compute Mahalanobis distance
+            dist = torch.sum((diff @ loc_cov) * diff, dim=1)  # [BHW]
+            distances.append(dist)
         
-        # Reshape back to image dimensions
-        anomaly_map = mahalanobis_dist.reshape(batch_size, 64, 64)
+        # Stack distances
+        distances = torch.stack(distances, dim=1)  # [BHW, 4096]
         
-        # Add channel dimension and normalize
-        anomaly_map = anomaly_map.unsqueeze(1)
-        anomaly_map = (anomaly_map - self.normalization_metrics.min) / (
-            self.normalization_metrics.max - self.normalization_metrics.min + 1e-8)
+        # Take minimum distance for each location
+        min_distances = torch.min(distances, dim=1)[0]  # [BHW]
         
-        # Upscale back to original size
+        # Reshape back to spatial dimensions
+        anomaly_map = min_distances.reshape(B, H, W)  # [B, H, W]
+        
+        # Add channel dimension
+        anomaly_map = anomaly_map.unsqueeze(1)  # [B, 1, H, W]
+        
+        # Normalize to [0, 1]
+        anomaly_map = (anomaly_map - anomaly_map.min()) / (anomaly_map.max() - anomaly_map.min() + 1e-8)
+        
+        # Upscale to input size
         anomaly_map = nn.functional.interpolate(
             anomaly_map,
             size=self.input_size,
